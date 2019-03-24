@@ -1,6 +1,6 @@
 # VB-like-C-window-wrapper-class
 
-A imple header only C++ window wrapper that functions similar to classic VB forms
+A simple header only C++ window wrapper that functions similar to classic VB forms
 
 With this project, I wanted to make it simple to test out graphical and console type problems at the same time in c without getting bogged down in boiler plate windows handling code.
 
