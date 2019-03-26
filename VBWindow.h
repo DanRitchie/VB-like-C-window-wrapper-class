@@ -23,25 +23,38 @@
 //MyWindow.SetMsgCallback(onMsg);
 
 
-
 #pragma once
 #include <windows.h>
+#include <commctrl.h>
+
+#pragma comment(linker,"\"/manifestdependency:type                  = 'win32' \
+                                              name                  = 'Microsoft.Windows.Common-Controls' \
+                                              version               = '6.0.0.0' \
+                                              processorArchitecture = '*' \
+                                              publicKeyToken        = '6595b64144ccf1df' \
+                                              language              = '*'\"")
+
 #include <string>
 #include <wingdi.h>
 #include <WinUser.h>
 #include <windowsx.h>
 #include <atlimage.h>
-
+#include <CommCtrl.h>
+#pragma comment(lib,"Comctl32.lib")
+ 
 int WindowCount=0;
 
 class VBWindow {
 
 	HWND window;
 	HINSTANCE winInstance;
-	char* winCaption;
 	HDC MyHDC=0;
+	std::string winCaption;
+	int childWindowIdentifierCounter=0;
 	float mousex, mousey;
-	bool mousedown=false;
+	bool MousedownL = false;
+	bool MousedownR = false;
+	bool MousedownM = false;
 	//used to set a callback function to call in the eventloop;
 	int(*MSGCallback)(VBWindow*, UINT, WPARAM, LPARAM)=NULL;
 	
@@ -50,14 +63,16 @@ public:
 	~VBWindow() { DeleteDC(MyHDC); };
 
 	//constructor
-	VBWindow(HINSTANCE instance, char* classname)
+	VBWindow(HINSTANCE instance, std::string classname)
 	{
+		InitCommonControls();
 		OpenWindow(instance, classname);
 	};
 
 	//constructor overload
-	VBWindow(HINSTANCE instance, char* classname, DWORD style )
+	VBWindow(HINSTANCE instance, std::string classname, DWORD style )
 	{
+		InitCommonControls();
 		OpenWindow(instance, classname, style);
 	};
 
@@ -75,9 +90,9 @@ public:
 		//I believe this posts a wm_close message to the window.
 		DestroyWindow(window);
 	};
-	void SetCaption(char* caption) {
-		winCaption = caption;
-		SetWindowText(window, winCaption);
+	void SetCaption(std::string caption) {
+		winCaption = caption.c_str();
+		SetWindowText(window, caption.c_str());
 		//need to repaint window?
 	}
 	void Move(int l, int t, int w, int h) {
@@ -137,8 +152,15 @@ public:
 	float GetMouseY() {
 		return mousey;
 	}
-	bool MouseDown() {
-		return mousedown;
+	bool GetButtons(int button) {
+		switch (button) {
+		case 0:
+			return MousedownL;
+		case 1:
+			return MousedownR;
+		case 2:
+			return MousedownM;
+		}
 	}
 	HCURSOR  SetMouseCursor(LPCSTR name) {
 		HCURSOR loncursor=LoadCursor( 0 ,  name);
@@ -188,7 +210,10 @@ public:
 		DrawText(GetHDC(), text.c_str(), text.length(), &rect, DT_LEFT);
 	}
 	
-
+	void Refresh() {
+		RedrawWindow(GetHWND(), NULL, NULL, RDW_UPDATENOW | RDW_ALLCHILDREN);
+		//UpdateWindow(GetHWND());
+	}
 	void SetForeColor(int color) {
 		SelectObject(GetHDC(), GetStockObject(DC_PEN));
 		SetDCPenColor(GetHDC(), color);
@@ -232,7 +257,7 @@ public:
 		Ellipse(GetHDC(),x-radius,y-radius,x+radius,y+radius);
 	}
 
-	void SetBits(int* bits, int w, int h) {
+	void SetBits(const int* bits, int w, int h) {
 		//if ((w == GetClientWidth()) && (h == GetClientHeight())) {
 			CImage c;
 			c.Create(w, -h, 32, 0);
@@ -249,12 +274,63 @@ public:
 			c.Destroy();
 		//}
 	}
-
 	//actually don't think I'll support getting bits from the image, because it's not in a persistant bitmap anyway.
 	//void GetBits(std::vector<int>* bits) {
 	//	int size = GetClientWidth() * GetClientHeight());
 	//	bits->resize(size);
 	//}
+
+
+	int MakeButton(std::string Caption, int l, int t, int w, int h) {
+		HWND result = CreateWindow(TEXT("BUTTON"), Caption.c_str(), WS_TABSTOP | WS_VISIBLE | WS_CHILD,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		return childWindowIdentifierCounter++;
+	}
+
+	int MakeLabel(std::string Caption, int l, int t, int w, int h) {
+		HWND result = CreateWindow(TEXT("STATIC"), Caption.c_str(), WS_VISIBLE | WS_CHILD | SS_LEFT | WS_EX_TRANSPARENT,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		//WS_BORDER
+		ShowWindow(result, SW_SHOW);
+		//needs to be called message callback
+		//HDC hdc = GetWindowDC(result);
+		//SetBkMode(hdc, TRANSPARENT);
+		//DeleteDC(hdc);
+		UpdateWindow(result);
+		return childWindowIdentifierCounter++;
+	}
+
+	int MakeTrackbar(std::string Caption, int l, int t, int w, int h, int low, int high) {
+
+		HWND result = CreateWindowW(TRACKBAR_CLASSW, L"Trackbar Control",
+			WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TRANSPARENTBKGND,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, NULL, NULL);
+
+		SendMessageW(result, TBM_SETRANGE, TRUE, MAKELONG(low, high));
+		SendMessageW(result, TBM_SETPAGESIZE, 0, 10);
+		SendMessageW(result, TBM_SETTICFREQ, 10, 0);
+		SendMessageW(result, TBM_SETPOS, FALSE, 0);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		return childWindowIdentifierCounter++;
+	}
+
+
+	//void MakeMenu() {
+	//	HMENU hMenubar = CreateMenu();
+	//	HMENU hMenu = CreateMenu();
+	//	UINT_PTR IDM_FILE_NEW;
+	//	UINT_PTR IDM_FILE_OPEN;
+	//	UINT_PTR IDM_FILE_QUIT;
+	//	AppendMenuW(hMenu, MF_STRING, IDM_FILE_NEW, L"&New");
+	//	AppendMenuW(hMenu, MF_STRING, IDM_FILE_OPEN, L"&Open");
+	//	AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+	//	AppendMenuW(hMenu, MF_STRING, IDM_FILE_QUIT, L"&Quit");
+	//	AppendMenuW(hMenubar, MF_POPUP, (UINT_PTR)hMenu, L"&File");
+	//}
+
 	
 	void SetMsgCallback( int(*func)(VBWindow*, UINT, WPARAM, LPARAM)) {
 		
@@ -322,16 +398,37 @@ protected:
 			break;
 		case WM_PAINT:
 			DrawSomething();//needed to get windows to stop sending paint events over and over and over...
+			//Refresh();
 			break;
 		case WM_MOUSEMOVE:
-			mousex = GET_X_LPARAM(lparam);
-			mousey = GET_Y_LPARAM(lparam);
+			//mousex = GET_X_LPARAM(lparam);
+			//mousey = GET_Y_LPARAM(lparam);
+			mousex = LOWORD(lparam);
+			mousey = HIWORD(lparam);
 			break;
 		case WM_LBUTTONDOWN:
-			mousedown = true;
+			MousedownL = true;
 			break;
 		case WM_LBUTTONUP:
-			mousedown = false;
+			MousedownL = false;
+			break;
+		case WM_RBUTTONDOWN:
+			MousedownR = true;
+			break;
+		case WM_RBUTTONUP:
+			MousedownR = false;
+			break;
+		case WM_MBUTTONDOWN:
+			MousedownM = true;
+			break;
+		case WM_MBUTTONUP:
+			MousedownM = false;
+			break;
+		case WM_COMMAND:
+			//do callback of button handling code with LOWORD(wparam)){
+			break;
+		case EM_SCROLL:
+			//do callback of trackbar code
 			break;
 		default:
 			result = DefWindowProcA(wnd, message, wparam, lparam);
@@ -355,16 +452,17 @@ protected:
 private:
 
 
-	void OpenWindow(HINSTANCE instance, char* ClassName, DWORD style=WS_OVERLAPPEDWINDOW) {
+	void OpenWindow(HINSTANCE instance, std::string ClassName, DWORD style=WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN ) {
 		winInstance = instance;
 		WindowCount+=1;
 		WNDCLASSA window_class = { 0 };
 		window_class.lpfnWndProc = WindowProc;
-		window_class.lpszClassName = ClassName;
+		window_class.lpszClassName = ClassName.c_str();
 		window_class.style = CS_HREDRAW | CS_VREDRAW;
+		window_class.hCursor = LoadCursor(0,IDC_ARROW);
 		RegisterClassA(&window_class);
 
-		window = CreateWindowA( ClassName,  winCaption, style, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, (void *)this );
+		window = CreateWindowA( ClassName.c_str(),  winCaption.c_str(), style,  CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, (void *)this );
 		MyHDC = GetDC(window);  //GetWindowDC gets the entire window dc including non client areas.
 	}
 
