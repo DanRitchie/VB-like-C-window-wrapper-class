@@ -40,6 +40,7 @@
 #include <windowsx.h>
 #include <atlimage.h>
 #include <CommCtrl.h>
+#include <vector>
 #pragma comment(lib,"Comctl32.lib")
  
 int WindowCount=0;
@@ -51,10 +52,7 @@ class VBWindow {
 	HDC MyHDC=0;
 	std::string winCaption;
 	int childWindowIdentifierCounter=0;
-	float mousex, mousey;
-	bool MousedownL = false;
-	bool MousedownR = false;
-	bool MousedownM = false;
+
 	//used to set a callback function to call in the eventloop;
 	int(*MSGCallback)(VBWindow*, UINT, WPARAM, LPARAM)=NULL;
 	
@@ -63,16 +61,16 @@ public:
 	~VBWindow() { DeleteDC(MyHDC); };
 
 	//constructor
-	VBWindow(HINSTANCE instance, std::string classname)
+	VBWindow(HINSTANCE instance, std::string classname="DefaultWinClass")
 	{
-		InitCommonControls();
+		InitControls();
 		OpenWindow(instance, classname);
 	};
 
 	//constructor overload
 	VBWindow(HINSTANCE instance, std::string classname, DWORD style )
 	{
-		InitCommonControls();
+		InitControls();
 		OpenWindow(instance, classname, style);
 	};
 
@@ -147,19 +145,42 @@ public:
 	}
 
 	float GetMouseX() {
-		return mousex;
+		POINT p;
+		GetCursorPos(&p);
+		ScreenToClient(window,&p);
+		return p.x;
 	}
 	float GetMouseY() {
-		return mousey;
+		POINT p;
+		GetCursorPos(&p);
+		ScreenToClient(window, &p);
+		return p.y;
 	}
+
+	float GetScreenMouseX() {
+		POINT p;
+		GetCursorPos(&p);
+		return p.x;
+	}
+	float GetScreenMouseY() {
+		POINT p;
+		GetCursorPos(&p);
+		return p.y;
+	}
+
 	bool GetButtons(int button) {
+		if (GetForegroundWindow() != window) return false;
 		switch (button) {
-		case 0:
-			return MousedownL;
 		case 1:
-			return MousedownR;
+			return GetAsyncKeyState(VK_LBUTTON);
 		case 2:
-			return MousedownM;
+			return  GetAsyncKeyState(VK_RBUTTON);
+		case 4:
+			return  GetAsyncKeyState(VK_MBUTTON);
+		case 5:
+			return  GetAsyncKeyState(VK_XBUTTON1);
+		case 6:
+			return  GetAsyncKeyState(VK_XBUTTON2);
 		}
 	}
 	HCURSOR  SetMouseCursor(LPCSTR name) {
@@ -257,7 +278,7 @@ public:
 		Ellipse(GetHDC(),x-radius,y-radius,x+radius,y+radius);
 	}
 
-	void SetBits(const int* bits, int w, int h) {
+	void SetBits(const unsigned int* bits, int w, int h) {
 		//if ((w == GetClientWidth()) && (h == GetClientHeight())) {
 			CImage c;
 			c.Create(w, -h, 32, 0);
@@ -280,6 +301,12 @@ public:
 	//	bits->resize(size);
 	//}
 
+	bool IsActive() {
+		return (bool(GetActiveWindow() == window));
+	}
+	void Focus() {
+		SetFocus(window);
+	}
 
 	int MakeButton(std::string Caption, int l, int t, int w, int h) {
 		HWND result = CreateWindow(TEXT("BUTTON"), Caption.c_str(), WS_TABSTOP | WS_VISIBLE | WS_CHILD,
@@ -289,8 +316,26 @@ public:
 		return childWindowIdentifierCounter++;
 	}
 
+	int MakeRadioButton(std::string Caption, int l, int t, int w, int h, bool checked) {
+		HWND result = CreateWindow(TEXT("BUTTON"), Caption.c_str(), WS_TABSTOP | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_CHILD,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		CheckDlgButton(window, childWindowIdentifierCounter, BST_CHECKED & checked);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		return childWindowIdentifierCounter++;
+	}
+
+	int MakeCheckbox(std::string Caption, int l, int t, int w, int h, bool checked) {
+		HWND result = CreateWindow(TEXT("BUTTON"), Caption.c_str(), WS_TABSTOP | WS_VISIBLE | BS_AUTOCHECKBOX | WS_CHILD,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		CheckDlgButton(window, childWindowIdentifierCounter, BST_CHECKED & checked);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		return childWindowIdentifierCounter++;
+	}
+
 	int MakeLabel(std::string Caption, int l, int t, int w, int h) {
-		HWND result = CreateWindow(TEXT("STATIC"), Caption.c_str(), WS_VISIBLE | WS_CHILD | SS_LEFT | WS_EX_TRANSPARENT,
+		HWND result = CreateWindow(TEXT("STATIC"), Caption.c_str(), WS_VISIBLE | WS_CHILD | WS_EX_TRANSPARENT,
 			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
 		//WS_BORDER
 		ShowWindow(result, SW_SHOW);
@@ -305,7 +350,7 @@ public:
 	int MakeTrackbar(std::string Caption, int l, int t, int w, int h, int low, int high) {
 
 		HWND result = CreateWindowW(TRACKBAR_CLASSW, L"Trackbar Control",
-			WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS | TBS_TRANSPARENTBKGND,
+			WS_CHILD | WS_VISIBLE | TBS_AUTOTICKS ,
 			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, NULL, NULL);
 
 		SendMessageW(result, TBM_SETRANGE, TRUE, MAKELONG(low, high));
@@ -316,6 +361,93 @@ public:
 		UpdateWindow(result);
 		return childWindowIdentifierCounter++;
 	}
+
+	int MakeDropdown(int l, int t, int w, int h, std::vector<std::string> list) {
+		HWND result = CreateWindow(TEXT("COMBOBOX"),TEXT(""), WS_TABSTOP | WS_CHILD | CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_OVERLAPPED | WS_VISIBLE,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+
+		for (int k = 0; k < (int)list.size(); k ++)
+		{
+			// Add string to combobox.
+			SendMessage(result, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)list[k].c_str());
+		}
+		// Send the CB_SETCURSEL message to display an initial item 
+//  in the selection field  
+		SendMessage(result, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+		return childWindowIdentifierCounter++;
+	}
+
+
+	int MakeSplitButton(std::string Caption,int l, int t, int w, int h) {
+		HWND result = CreateWindow(TEXT("Button"), TEXT(Caption.c_str()), WS_TABSTOP | WS_CHILD | BS_SPLITBUTTON | CBS_HASSTRINGS | WS_OVERLAPPED | WS_VISIBLE,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		return childWindowIdentifierCounter++;
+	}
+
+
+	int MakeCommandLink(std::string Caption, int l, int t, int w, int h) {
+		HWND result = CreateWindow(TEXT("Button"), TEXT(Caption.c_str()), WS_TABSTOP | WS_CHILD | BS_COMMANDLINK | CBS_HASSTRINGS | WS_OVERLAPPED | WS_VISIBLE,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		return childWindowIdentifierCounter++;
+	}
+
+	int MakeHyperLink(std::string Caption, int l, int t, int w, int h) {
+		HWND result = CreateWindowEx(0,TEXT("SYSLINK"),TEXT(Caption.c_str()), WS_VISIBLE | WS_CHILD | WS_TABSTOP ,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		return childWindowIdentifierCounter++;
+	}
+ 
+	int MakeTextInput(std::string Text, int l, int t, int w, int h, bool Multiline=false) {
+		int ml = 0;
+		if (Multiline = true) ml = (ES_MULTILINE | WS_VSCROLL | ES_AUTOVSCROLL | ES_LEFT);
+		HWND result = CreateWindowEx(0, TEXT("EDIT"), TEXT(Text.c_str()), WS_VISIBLE | WS_CHILD | WS_TABSTOP | ml ,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		// Add text to the window. 
+		//SendMessage(result, WM_SETTEXT, 0, (LPARAM)Text.c_str());
+		return childWindowIdentifierCounter++;
+	}
+
+	int MakeNumericInput(std::string value, int l, int t, int w, int h) {
+		HWND result = CreateWindowEx(0, TEXT("EDIT"),  TEXT(value.c_str()), WS_VISIBLE | WS_CHILD | WS_TABSTOP | ES_LEFT | ES_NUMBER,
+			l, t, w, h, window, (HMENU)childWindowIdentifierCounter, winInstance, NULL);
+		ShowWindow(result, SW_SHOW);
+		UpdateWindow(result);
+		// Add text to the window. 
+		//SendMessage(result, WM_SETTEXT, 0, (LPARAM)value.c_str());
+		return childWindowIdentifierCounter++;
+	}
+
+	void MakePopup(std::vector<std::string> list,int x, int y) {
+		// Get screen coordinates of the button.
+		POINT pt;
+		pt.x = x;
+		pt.y = y;
+		ClientToScreen(window, &pt);
+
+		// Create a menu and add items.
+		HMENU hMenu = CreatePopupMenu();
+		for (int n = 0; n < list.size(); n++) {
+			AppendMenu(hMenu, MF_BYPOSITION | MF_STRING, n, list[n].c_str());
+		}
+		TrackPopupMenu(hMenu, 0, pt.x, pt.y, 0, window, NULL);
+	}
+	
+	//void TDialog() {
+	//	int* pnbutts;
+	//	pnbutts = 0;
+	//	TaskDialog(window, winInstance, (PCWSTR)"Title", (PCWSTR)"This is the ain instruction", (PCWSTR)"This is the content",
+	//		TDCBF_OK_BUTTON | TDCBF_CANCEL_BUTTON, TD_INFORMATION_ICON, pnbutts);
+	//}
 
 
 	//void MakeMenu() {
@@ -400,36 +532,36 @@ protected:
 			DrawSomething();//needed to get windows to stop sending paint events over and over and over...
 			//Refresh();
 			break;
-		case WM_MOUSEMOVE:
-			//mousex = GET_X_LPARAM(lparam);
-			//mousey = GET_Y_LPARAM(lparam);
-			mousex = LOWORD(lparam);
-			mousey = HIWORD(lparam);
-			break;
-		case WM_LBUTTONDOWN:
-			MousedownL = true;
-			break;
-		case WM_LBUTTONUP:
-			MousedownL = false;
-			break;
-		case WM_RBUTTONDOWN:
-			MousedownR = true;
-			break;
-		case WM_RBUTTONUP:
-			MousedownR = false;
-			break;
-		case WM_MBUTTONDOWN:
-			MousedownM = true;
-			break;
-		case WM_MBUTTONUP:
-			MousedownM = false;
-			break;
-		case WM_COMMAND:
-			//do callback of button handling code with LOWORD(wparam)){
-			break;
-		case EM_SCROLL:
-			//do callback of trackbar code
-			break;
+		//case WM_MOUSEMOVE:
+		//	//mousex = GET_X_LPARAM(lparam);
+		//	//mousey = GET_Y_LPARAM(lparam);
+		//	mousex = LOWORD(lparam);
+		//	mousey = HIWORD(lparam);
+		//	break;
+		//case WM_LBUTTONDOWN:
+		//	MousedownL = true;
+		//	break;
+		//case WM_LBUTTONUP:
+		//	MousedownL = false;
+		//	break;
+		//case WM_RBUTTONDOWN:
+		//	MousedownR = true;
+		//	break;
+		//case WM_RBUTTONUP:
+		//	MousedownR = false;
+		//	break;
+		//case WM_MBUTTONDOWN:
+		//	MousedownM = true;
+		//	break;
+		//case WM_MBUTTONUP:
+		//	MousedownM = false;
+		//	break;
+		//case WM_COMMAND:
+		//	//do callback of button handling code with LOWORD(wparam)){
+		//	break;
+		//case EM_SCROLL:
+		//	//do callback of trackbar code
+		//	break;
 		default:
 			result = DefWindowProcA(wnd, message, wparam, lparam);
 			break;
@@ -451,6 +583,21 @@ protected:
 
 private:
 
+	void InitControls() {
+		INITCOMMONCONTROLSEX iccx;
+		iccx.dwSize = sizeof iccx;
+		iccx.dwICC = ICC_STANDARD_CLASSES;
+		InitCommonControlsEx(&iccx);
+		//calls to InitCommonControlsEx are cumulative
+		iccx.dwICC = ICC_LINK_CLASS;
+		InitCommonControlsEx(&iccx);
+		//
+		iccx.dwICC = ICC_PROGRESS_CLASS;
+		InitCommonControlsEx(&iccx);
+		//
+		iccx.dwICC = ICC_USEREX_CLASSES;
+		InitCommonControlsEx(&iccx);
+	}
 
 	void OpenWindow(HINSTANCE instance, std::string ClassName, DWORD style=WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN ) {
 		winInstance = instance;
@@ -458,7 +605,8 @@ private:
 		WNDCLASSA window_class = { 0 };
 		window_class.lpfnWndProc = WindowProc;
 		window_class.lpszClassName = ClassName.c_str();
-		window_class.style = CS_HREDRAW | CS_VREDRAW;
+		window_class.hbrBackground= GetSysColorBrush(COLOR_3DFACE);
+		window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 		window_class.hCursor = LoadCursor(0,IDC_ARROW);
 		RegisterClassA(&window_class);
 
